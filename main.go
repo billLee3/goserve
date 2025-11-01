@@ -27,30 +27,22 @@ func main() {
 	apiCfg := apiConfig{fileserverhits: atomic.Int32{}}
 	handler := http.StripPrefix("/app", http.FileServer(http.Dir(filepathRoot)))
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(handler))
-	mux.HandleFunc("/healtz", handlerReadiness)
-	mux.HandleFunc("/metrics", apiCfg.handlerMetrics)
-	mux.HandleFunc("/reset", apiCfg.handlerReset)
+	mux.HandleFunc("GET /api/healthz", handlerReadiness)
+	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics)
+	mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
 	srv := &http.Server{
 		Addr:    ":" + port,
 		Handler: mux,
 	}
-
-	//Readiness Endpoint
-	// mux.HandleFunc("/healthz", func(w http.ResponseWriter, req *http.Request) {
-	// 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	// 	w.WriteHeader(http.StatusOK)
-	// 	_, err := w.Write([]byte("OK"))
-	// 	if err != nil {
-	// 		fmt.Printf("Error writing response: %v\n", err)
-	// 	}
-	// })
 
 	log.Printf("Serving files from %s on port: %s\n", filepathRoot, port)
 	log.Fatal(srv.ListenAndServe())
 }
 
 func (cfg *apiConfig) handlerMetrics(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Add("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(fmt.Sprintf("Hits: %d", cfg.fileserverhits.Load())))
+	w.Write([]byte(fmt.Sprintf(
+		"<html><body><h1>Welcome, Chirpy Admin</h1><p>Chirpy has been visited %d times!</p></body></html>",
+		cfg.fileserverhits.Load())))
 }
