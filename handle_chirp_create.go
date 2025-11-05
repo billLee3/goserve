@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/goserve/internal/database"
 )
 
 type Chirp struct {
@@ -23,10 +24,11 @@ func (cfg *apiConfig) handleChirpsCreate(w http.ResponseWriter, r *http.Request)
 	defer r.Body.Close()
 	// Type for responseBody
 	type requestBody struct {
-		Body string `json:"body"`
+		Body    string    `json:"body"`
+		User_Id uuid.UUID `json:"user_id"`
 	}
 	type responseBody struct {
-		Cleaned_body string `json:"cleaned_body"`
+		Chirp
 	}
 
 	data, err := io.ReadAll(r.Body)
@@ -58,8 +60,25 @@ func (cfg *apiConfig) handleChirpsCreate(w http.ResponseWriter, r *http.Request)
 
 	cleaned_sentence := strings.Join(words, " ")
 
-	respondWithJSON(w, 200, responseBody{
-		Cleaned_body: cleaned_sentence,
+	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
+		Body:   cleaned_sentence,
+		UserID: MyReq.User_Id,
+	})
+	if err != nil {
+		respondWithError(w, 500, "unable to create a chirp")
+		return
+	}
+
+	chirpStruct := Chirp{
+		Id:         chirp.ID,
+		Created_At: chirp.CreatedAt,
+		Updated_At: chirp.UpdatedAt,
+		Body:       chirp.Body,
+		User_id:    chirp.UserID,
+	}
+
+	respondWithJSON(w, 201, responseBody{
+		Chirp: chirpStruct,
 	})
 }
 
