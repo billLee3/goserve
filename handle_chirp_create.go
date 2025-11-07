@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/goserve/internal/auth"
 	"github.com/goserve/internal/database"
 )
 
@@ -60,12 +62,23 @@ func (cfg *apiConfig) handleChirpsCreate(w http.ResponseWriter, r *http.Request)
 
 	cleaned_sentence := strings.Join(words, " ")
 
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, "no JWT")
+		return
+	}
+	jwt_id, err := auth.ValidateJWT(token, cfg.secret)
+	if err != nil {
+		respondWithError(w, 401, fmt.Sprintf("%v", err))
+		return
+	}
+
 	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
 		Body:   cleaned_sentence,
-		UserID: MyReq.User_Id,
+		UserID: jwt_id,
 	})
 	if err != nil {
-		respondWithError(w, 500, "unable to create a chirp")
+		respondWithError(w, 500, fmt.Sprintf("%v", err))
 		return
 	}
 
