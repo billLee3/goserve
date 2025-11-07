@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -67,6 +69,24 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 }
 
 func GetBearerToken(headers http.Header) (string, error) {
+	authHeader := headers.Get("Authorization")
+	// if !strings.Contains(authHeader, "Bearer ") {
+	// 	return "", fmt.Errorf("authorization header doesn't contain a jwt bearer token")
+	// }
+	slice_of_strings := strings.Split(authHeader, " ")
+	if len(slice_of_strings) != 2 {
+		return "", fmt.Errorf("no token string in jwt")
+	}
+	return slice_of_strings[1], nil
+}
+
+func MakeRefreshToken() string {
+	token := make([]byte, 32)
+	rand.Read(token)
+	return hex.EncodeToString(token)
+}
+
+func GetAPIKey(headers http.Header) (string, error) {
 	authHeader := headers.Get("Authorization")
 	// if !strings.Contains(authHeader, "Bearer ") {
 	// 	return "", fmt.Errorf("authorization header doesn't contain a jwt bearer token")

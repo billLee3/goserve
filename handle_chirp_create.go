@@ -2,10 +2,8 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
-	"io"
+	"errors"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
@@ -15,84 +13,86 @@ import (
 )
 
 type Chirp struct {
-	Id         uuid.UUID `json:"id"`
-	Created_At time.Time `json:"created_at"`
-	Updated_At time.Time `json:"updated_at"`
-	Body       string    `json:"body"`
-	User_id    uuid.UUID `json:"user_id"`
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	UserID    uuid.UUID `json:"user_id"`
+	Body      string    `json:"body"`
 }
 
-func (cfg *apiConfig) handleChirpsCreate(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
-	// Type for responseBody
-	type requestBody struct {
-		Body    string    `json:"body"`
-		User_Id uuid.UUID `json:"user_id"`
+func (cfg *apiConfig) handlerChirpsCreate(w http.ResponseWriter, r *http.Request) {
+	type parameters struct {
+		Body string `json:"body"`
 	}
-	type responseBody struct {
-		Chirp
-	}
-
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		respondWithError(w, 500, "couldn't read the request")
-		return
-	}
-	MyReq := requestBody{}
-	err = json.Unmarshal(data, &MyReq)
-	if err != nil {
-		respondWithError(w, 500, "Something went wrong")
-		return
-	}
-
-	if len(MyReq.Body) > 140 {
-		respondWithError(w, 400, "Chirp is too long")
-		return
-	}
-
-	const stars = "****"
-	words := strings.Split(MyReq.Body, " ")
-	profane_words := []string{"kerfuffle", "sharbert", "fornax"}
-
-	for index, word := range words {
-		if slices.Contains(profane_words, strings.ToLower(word)) {
-			words[index] = stars
-		}
-	}
-
-	cleaned_sentence := strings.Join(words, " ")
 
 	token, err := auth.GetBearerToken(r.Header)
 	if err != nil {
-		respondWithError(w, 401, "no JWT")
+		respondWithError(w, http.StatusUnauthorized, "Couldn't find JWT")
 		return
 	}
-	jwt_id, err := auth.ValidateJWT(token, cfg.secret)
+	userID, err := auth.ValidateJWT(token, cfg.secret)
 	if err != nil {
-		respondWithError(w, 401, fmt.Sprintf("%v", err))
+		respondWithError(w, http.StatusUnauthorized, "Couldn't validate JWT")
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err = decoder.Decode(&params)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters")
+		return
+	}
+
+	cleaned, err := validateChirp(params.Body)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
-		Body:   cleaned_sentence,
-		UserID: jwt_id,
+		Body:   cleaned,
+		UserID: userID,
 	})
 	if err != nil {
-		respondWithError(w, 500, fmt.Sprintf("%v", err))
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create chirp")
 		return
 	}
 
-	chirpStruct := Chirp{
-		Id:         chirp.ID,
-		Created_At: chirp.CreatedAt,
-		Updated_At: chirp.UpdatedAt,
-		Body:       chirp.Body,
-		User_id:    chirp.UserID,
+	respondWithJSON(w, http.StatusCreated, Chirp{
+		ID:        chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body:      chirp.Body,
+		UserID:    chirp.UserID,
+	})
+}
+
+func validateChirp(body string) (string, error) {
+	const maxChirpLength = 140
+	if len(body) > maxChirpLength {
+		return "", errors.New("Chirp is too long")
 	}
 
-	respondWithJSON(w, 201, responseBody{
-		Chirp: chirpStruct,
-	})
+	badWords := map[string]struct{}{
+		"kerfuffle": {},
+		"sharbert":  {},
+		"fornax":    {},
+	}
+	cleaned := getCleanedBody(body, badWords)
+	return cleaned, nil
+}
+
+func getCleanedBody(body string, badWords map[string]struct{}) string {
+	words := strings.Split(body, " ")
+	for i, word := range words {
+		loweredWord := strings.ToLower(word)
+		if _, ok := badWords[loweredWord]; ok {
+			words[i] = "****"
+		}
+	}
+	cleaned := strings.Join(words, " ")
+	return cleaned
 }
 
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) error {
