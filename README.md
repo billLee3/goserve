@@ -1,5 +1,4 @@
 # GoServe
----
 ### Description
 ---
 GoServe is a web server built from scratch using Golang. Primarily focusing on the implementation of the net/http package.
